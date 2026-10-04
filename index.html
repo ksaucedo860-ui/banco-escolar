@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banco Escolar</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f1f5fb;color:#20304b}
+header{background:#18345c;color:white;padding:20px}
+header h2{margin:0}
+nav{display:flex;overflow:auto;background:white;padding:8px;gap:6px}
+nav button{border:0;padding:12px;background:#e9effb;color:#244d9a;border-radius:8px;white-space:nowrap;font-size:15px}
+nav button.on{background:#245bd3;color:#fff}
+main{padding:16px;max-width:850px;margin:auto}
+section{background:white;padding:17px;border-radius:12px;margin:12px 0}
+h3{margin-top:0}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.card{background:#edf3ff;pa3dding:15px;border-radius:10px}
+.card b{display:block;font-size:23px;margin-top:8px}
+input,select{width:100%;padding:12px;margin:7px 0 14px;border:1px solid #ccd5e3;border-radius:8px;font-size:16px}
+button{cursor:pointer}
+.action{background:#245bd3;color:white;border:0;border-radius:8px;padding:13px;width:100%;font-size:16px}
+table{width:100%;border-collapse:collapse}
+td,th{text-align:left;padding:10px 5px;border-bottom:1px solid #e6eaf0;font-size:14px}
+small,.mu{color:#687993}
+.big{font-size:40px;font-weight:700;color:#245bd3}
+.qr{background:#fff;padding:6px;border:1px solid #e6eaf0;border-radius:8px;width:150px;height:150px;margin:0 auto}
+.qr svg{width:100%;height:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;text-align:center}
+.mini{background:none;border:0;color:#687993;font-size:14px;text-decoration:underline;padding:6px}
+.err{color:#c0392b}
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+</head>
+<body>
+<header><h2>🏦 Banco Escolar</h2><small style="color:#dce8ff">Aprendiendo a ahorrar</small></header>
+<div id="nav"></div>
+<main><div id="root"></div></main>
+<script>
+const CFG={apiKey:"AIzaSyBwrU93KKaFSF09Zvf4IWxi7swoUZqKBbI",authDomain:"banco-escolar-3416d.firebaseapp.com",projectId:"banco-escolar-3416d",appId:"1:706797651897:web:d9fe250be6df6ddd549868"};
+const $=s=>document.querySelector(s);
+let S=[],user=null,pg='home',db,auth,loaded=false,msg='';
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cash=c=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format((c||0)/100);
+const total=()=>S.reduce((t,s)=>t+(s.total||0),0);
+const base=()=>location.href.split('#')[0];
+const qr=u=>{const q=qrcode(0,'M');q.addData(u);q.make();return q.createSvgTag({cellSize:4,margin:1,scalable:true})};
+const F=()=>firebase.firestore.FieldValue;
+const moves=()=>S.flatMap(s=>(s.moves||[]).map(m=>Object.assign({n:s.name,sid:s.id},m))).sort((a,b)=>b.t-a.t);
+const mrows=(a,full)=>a.map(m=>'<tr><td>'+esc(m.n)+'</td><td>'+m.k+'</td><td>'+cash(m.m)+'</td>'+(full?'<td>'+new Date(m.d).toLocaleDateString('es-MX')+'</td>':'')+'</tr>').join('');
+const sec=(t,b)=>'<section><h3>'+t+'</h3>'+b+'</section>';
+
+function studentView(id){
+ const s=S.find(x=>x.id===id);
+ if(!loaded)return sec('Cargando…','');
+ if(!s)return sec('No se encontró esta tarjeta','');
+ return sec('🐷 Mi tarjeta de ahorro','<b style="font-size:20px">'+esc(s.name)+'</b> <span class="mu">· '+esc(s.classroom)+'</span><p class="mu">Mi ahorro actual</p><div class="big">'+cash(s.total)+'</div>')+
+ sec('Ahorro total del grupo','<div class="big">'+cash(total())+'</div>');
+}
+function publicView(){
+ const rows=S.map(s=>'<tr><td>'+esc(s.name)+'<br><small>'+esc(s.classroom)+'</small></td><td>'+cash(s.total)+'</td></tr>').join('');
+ return sec('Total ahorrado del grupo','<div class="big">'+cash(total())+'</div><span class="mu">'+S.length+' alumnos</span>')+
+ sec('Ahorro por alumno','<table><tr><th>Alumno</th><th>Ahorro</th></tr>'+(rows||'<tr><td colspan="2" class="mu">'+(loaded?'Sin alumnos todavía':'Cargando…')+'</td></tr>')+'</table>')+'<a class="mini" href="#admin">Maestro/a</a>';
+}
+function home(){
+ const r=moves().slice(0,5);
+ return sec('Panel principal','<div class="cards"><div class="card">Saldo total<b>'+cash(total())+'</b></div><div class="card">Alumnos<b>'+S.length+'</b></div><div class="card">Movimientos<b>'+moves().length+'</b></div></div>')+
+ sec('Movimientos recientes',r.length?'<table><tr><th>Alumno</th><th>Tipo</th><th>Monto</th></tr>'+mrows(r)+'</table>':'Sin movimientos');
+}
+function alumnos(){
+ const q=(($('#q')||{}).value||'').toLowerCase();
+ const a=S.filter(s=>(s.name+s.classroom).toLowerCase().includes(q));
+ return sec('Alumnos registrados','<input id="q" placeholder="Buscar alumno" data-live>'+(a.length?'<table><tr><th>Alumno</th><th>Saldo</th><th></th></tr>'+a.map(s=>'<tr><td>'+esc(s.name)+'<br><small>'+esc(s.classroom)+'</small></td><td>'+cash(s.total)+'</td><td><button class="mini" data-del="'+s.id+'">Eliminar</button></td></tr>').join('')+'</table>':'No hay alumnos'));
+}
+function agregar(){
+ return sec('Registrar alumno','<label>Nombre</label><input id="nn" placeholder="Nombre del alumno"><label>Salón</label><input id="nc" placeholder="3.º A"><button class="action" data-add>Guardar alumno</button>');
+}
+function mov(){
+ return sec('Registrar movimiento','<label>Alumno</label><select id="who">'+S.map(s=>'<option value="'+s.id+'">'+esc(s.name)+'</option>').join('')+'</select><label>Tipo</label><select id="kind"><option>Depósito</option><option>Retiro</option></select><label>Monto</label><input id="amt" type="number" inputmode="decimal" min=".01" step=".01"><button class="action" data-mov>Guardar movimiento</button>');
+}
+function hist(){
+ const a=moves();
+ return sec('Historial',(a.length?'<table><tr><th>Alumno</th><th>Tipo</th><th>Monto</th><th>Fecha</th></tr>'+mrows(a,1)+'</table><button class="mini" data-undo>Deshacer último movimiento</button>':'Sin movimientos'));
+}
+function qrs(){
+ return sec('QR del resumen general','<div class="qr">'+qr(base())+'</div>')+
+ sec('QR por alumno (para su tarjeta)','<p class="mu">Genera los QR abriendo la app desde su dirección final en internet.</p><div class="grid">'+S.map(s=>'<div><div class="qr">'+qr(base()+'#a='+s.id)+'</div><b>'+esc(s.name)+'</b><br><small>'+esc(s.classroom)+'</small></div>').join('')+'</div>');
+}
+function login(){
+ return sec('Entrar como maestro/a','<input id="em" type="email" placeholder="Correo"><input id="pw" type="password" placeholder="Contraseña" data-enter><button class="action" data-login>Entrar</button><div class="err">'+esc(msg)+'</div>');
+}
+function render(){
+ const keep={};document.querySelectorAll('input,select').forEach(i=>keep[i.id]=i.value);
+ const fid=document.activeElement&&document.activeElement.id;
+ const m=location.hash.match(/a=(\w+)/);let h='',n='';
+ if(m)h=studentView(m[1]);
+ else if(user){
+  const P=[['home','Inicio',home],['alumnos','Alumnos',alumnos],['add','Agregar alumno',agregar],['mov','Depósito / Retiro',mov],['hist','Historial',hist],['qr','QR',qrs]];
+  n='<nav>'+P.map(p=>'<button data-pg="'+p[0]+'" class="'+(pg===p[0]?'on':'')+'">'+p[1]+'</button>').join('')+'<button data-out>Salir</button></nav>';
+  h=(P.find(p=>p[0]===pg)||P[0])[2]();
+ }else h=location.hash==='#admin'?login():publicView();
+ $('#nav').innerHTML=n;$('#root').innerHTML=h;
+ for(const k in keep){const i=document.getElementById(k);if(i&&keep[k])i.value=keep[k]}
+ if(fid){const i=document.getElementById(fid);if(i)i.focus()}
+}
+document.addEventListener('input',e=>{if(e.target.dataset.live!==undefined)render()});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.dataset.enter!==undefined)document.querySelector('[data-login]').click()});
+document.addEventListener('click',async e=>{
+ const b=e.target.closest('button');if(!b)return;const d=b.dataset,col=db.collection('alumnos');
+ try{
+  if(d.pg){pg=d.pg;render()}
+  else if(d.out!==undefined){await auth.signOut();location.hash=''}
+  else if(d.login!==undefined){msg='';try{await auth.signInWithEmailAndPassword($('#em').value.trim(),$('#pw').value);location.hash=''}catch(x){msg='Correo o contraseña incorrectos.';render()}}
+  else if(d.add!==undefined){
+   const n=$('#nn').value.trim(),c=$('#nc').value.trim();if(!n)return;
+   await col.add({name:n,classroom:c||'-',total:0,moves:[],created:Date.now()});$('#nn').value='';$('#nc').value='';alert('Alumno guardado');
+  }else if(d.mov!==undefined){
+   const id=$('#who').value,k=$('#kind').value,m=Math.round(parseFloat($('#amt').value)*100),s=S.find(x=>x.id===id);
+   if(!s||!(m>0)){alert('Monto inválido');return}
+   if(k==='Retiro'&&m>(s.total||0)){alert('Saldo insuficiente');return}
+   await col.doc(id).update({moves:F().arrayUnion({k,m,d:new Date().toISOString(),t:Date.now()}),total:F().increment(k==='Retiro'?-m:m)});
+   $('#amt').value='';alert('Movimiento guardado');
+  }else if(d.undo!==undefined){
+   const l=moves()[0],s=S.find(x=>x.id===l.sid),o=s.moves.find(x=>x.t===l.t);
+   await col.doc(s.id).update({moves:F().arrayRemove(o),total:F().increment(o.k==='Retiro'?o.m:-o.m)});
+  }else if(d.del){
+   const s=S.find(x=>x.id===d.del);
+   if(confirm('¿Eliminar a '+s.name+' y todos sus movimientos?'))await col.doc(s.id).delete();
+  }
+ }catch(x){alert('No se pudo guardar. Revisa tu internet o vuelve a entrar.')}
+});
+addEventListener('hashchange',render);
+firebase.initializeApp(CFG);db=firebase.firestore();auth=firebase.auth();
+auth.onAuthStateChanged(u=>{user=u;render()});
+db.collection('alumnos').orderBy('name').onSnapshot(q=>{S=q.docs.map(d=>Object.assign({id:d.id},d.data()));loaded=true;render()},()=>{loaded=true;render()});
+render();
+</script>
+</body>
+</html>
